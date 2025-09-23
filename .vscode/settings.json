@@ -1,0 +1,24 @@
+{
+  "C_Cpp.errorSquiggles": "enabled",
+  "files.associations": {
+    "*.dbclient-js": "javascript",
+    "ostream": "cpp",
+    "iostream": "cpp"
+  },
+
+  "code-runner.executorMap": {
+    "cpp": "cd $dir && C:\\msys64\\ucrt64\\bin\\g++.exe -std=c++17 -Wall $fileName -o $fileNameWithoutExt.exe && .\\$fileNameWithoutExt.exe"
+
+  },
+  "code-runner.runInTerminal": true,
+  "code-runner.clearPreviousOutput": true,
+  "code-runner.saveFileBeforeRun": true,
+
+  "editor.formatOnSave": true,
+  "files.autoSave": "afterDelay",
+
+  "C_Cpp.default.compilerPath": "C:/msys64/ucrt64/bin/g++.exe",
+  "C_Cpp.default.cppStandard": "c++17",
+  "C_Cpp.intelliSenseEngine": "default",
+  "C_Cpp.default.intelliSenseMode": "windows-gcc-x64"
+}
