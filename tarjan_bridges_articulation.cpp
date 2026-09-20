@@ -1,12 +1,13 @@
 #include <algorithm>
+#include <cassert>
 #include <iostream>
+#include <set>
 #include <utility>
 #include <vector>
 
 using namespace std;
 
 // Tarjan's algorithm for bridges and articulation points in an undirected graph.
-// Input vertices are numbered from 0 to vertices - 1.
 class TarjanGraph {
 private:
     struct Edge {
@@ -37,22 +38,17 @@ private:
                 lowLink[vertex] = min(lowLink[vertex], lowLink[edge.to]);
 
                 if (lowLink[edge.to] > discoveryTime[vertex]) {
-                    bridges.emplace_back(min(vertex, edge.to),
-                                         max(vertex, edge.to));
+                    bridges.emplace_back(min(vertex, edge.to), max(vertex, edge.to));
                 }
 
-                if (parentEdge != -1 &&
-                    lowLink[edge.to] >= discoveryTime[vertex]) {
+                if (parentEdge != -1 && lowLink[edge.to] >= discoveryTime[vertex]) {
                     articulation[vertex] = true;
                 }
             } else {
-                lowLink[vertex] = min(lowLink[vertex],
-                                       discoveryTime[edge.to]);
+                lowLink[vertex] = min(lowLink[vertex], discoveryTime[edge.to]);
             }
         }
 
-        // A DFS root is an articulation point only if it has two or more
-        // independent DFS children.
         if (parentEdge == -1 && children > 1) {
             articulation[vertex] = true;
         }
@@ -72,10 +68,9 @@ public:
             return;
         }
 
-        // A unique edge ID ensures that parallel edges are handled correctly:
-        // only the DFS tree edge is ignored as the parent edge.
-        const int edgeId = static_cast<int>(bridges.size()) +
-                           static_cast<int>(graph[0].size());
+        const int edgeId = static_cast<int>(graph[first].size()) +
+                           static_cast<int>(graph[second].size());
+
         graph[first].push_back({second, edgeId});
         graph[second].push_back({first, edgeId});
     }
@@ -87,9 +82,7 @@ public:
         fill(lowLink.begin(), lowLink.end(), -1);
         fill(articulation.begin(), articulation.end(), false);
 
-        // Starting from every unvisited vertex supports disconnected graphs.
-        for (int vertex = 0; vertex < static_cast<int>(graph.size());
-             ++vertex) {
+        for (int vertex = 0; vertex < static_cast<int>(graph.size()); ++vertex) {
             if (discoveryTime[vertex] == -1) {
                 dfs(vertex, -1);
             }
@@ -104,43 +97,110 @@ public:
 
     vector<int> getArticulationPoints() const {
         vector<int> result;
-        for (int vertex = 0; vertex < static_cast<int>(articulation.size());
-             ++vertex) {
+        for (int vertex = 0; vertex < static_cast<int>(articulation.size()); ++vertex) {
             if (articulation[vertex]) {
                 result.push_back(vertex);
             }
         }
+        sort(result.begin(), result.end());
         return result;
     }
 };
 
-int main() {
-    ios::sync_with_stdio(false);
-    cin.tie(nullptr);
+template <typename T>
+bool sameVector(const vector<T>& a, const vector<T>& b) {
+    return a == b;
+}
 
-    int vertices, edges;
-    if (!(cin >> vertices >> edges) || vertices < 0 || edges < 0) {
-        return 0;
+void runTest(const string& name,
+             const vector<pair<int, int>>& edges,
+             const vector<pair<int, int>>& expectedBridges,
+             const vector<int>& expectedArticulationPoints) {
+    int maxVertex = 0;
+    for (const auto& [u, v] : edges) {
+        maxVertex = max(maxVertex, max(u, v));
     }
 
-    TarjanGraph graph(vertices);
-    for (int i = 0; i < edges; ++i) {
-        int first, second;
-        cin >> first >> second;
-        graph.addEdge(first, second);
+    TarjanGraph graph(maxVertex + 1);
+    for (const auto& [u, v] : edges) {
+        graph.addEdge(u, v);
     }
 
     graph.findCriticalElements();
 
-    cout << "Bridges:\n";
-    for (const auto& [first, second] : graph.getBridges()) {
-        cout << first << " - " << second << '\n';
+    const auto bridges = graph.getBridges();
+    const auto articulationPoints = graph.getArticulationPoints();
+
+    if (!sameVector(bridges, expectedBridges)) {
+        cerr << "FAIL: " << name << " bridges\n";
+        cerr << "Expected: ";
+        for (const auto& e : expectedBridges) {
+            cerr << "(" << e.first << "," << e.second << ") ";
+        }
+        cerr << "\nActual:   ";
+        for (const auto& e : bridges) {
+            cerr << "(" << e.first << "," << e.second << ") ";
+        }
+        cerr << "\n";
+        assert(false);
     }
 
-    cout << "Articulation points:\n";
-    for (int vertex : graph.getArticulationPoints()) {
-        cout << vertex << '\n';
+    if (!sameVector(articulationPoints, expectedArticulationPoints)) {
+        cerr << "FAIL: " << name << " articulation points\n";
+        cerr << "Expected: ";
+        for (int x : expectedArticulationPoints) cerr << x << " ";
+        cerr << "\nActual:   ";
+        for (int x : articulationPoints) cerr << x << " ";
+        cerr << "\n";
+        assert(false);
     }
 
+    cout << "PASS: " << name << "\n";
+}
+
+int main() {
+    // 1) Simple path: 0-1-2
+    // Bridges: (0,1), (1,2)
+    // Articulation: 1
+    runTest("path graph",
+            {{0, 1}, {1, 2}},
+            {{0, 1}, {1, 2}},
+            {1});
+
+    // 2) Cycle: 0-1-2-0
+    // Bridges: none
+    // Articulation: none
+    runTest("cycle graph",
+            {{0, 1}, {1, 2}, {2, 0}},
+            {},
+            {});
+
+    // 3) Star: 0 connected to 1,2,3
+    // Bridges: none
+    // Articulation: 0
+    runTest("star graph",
+            {{0, 1}, {0, 2}, {0, 3}},
+            {},
+            {0});
+
+    // 4) Disconnected graph:
+    // 0-1-2 and 3-4
+    // Bridges: (0,1), (1,2), (3,4)
+    // Articulation: 1
+    runTest("disconnected graph",
+            {{0, 1}, {1, 2}, {3, 4}},
+            {{0, 1}, {1, 2}, {3, 4}},
+            {1});
+
+    // 5) Graph with a cycle and a leaf:
+    // 0-1, 1-2, 2-0, 1-3, 3-4
+    // Bridges: (3,4)
+    // Articulation: 1, 3
+    runTest("cycle with leaf",
+            {{0, 1}, {1, 2}, {2, 0}, {1, 3}, {3, 4}},
+            {{3, 4}},
+            {1, 3});
+
+    cout << "All Tarjan validation tests passed." << endl;
     return 0;
 }
