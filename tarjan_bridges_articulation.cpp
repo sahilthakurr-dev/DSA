@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <iostream>
 #include <set>
 #include <utility>
@@ -21,6 +22,7 @@ private:
     vector<bool> articulation;
     vector<pair<int, int>> bridges;
     int timer = 0;
+    int nextEdgeId = 0;
 
     void dfs(int vertex, int parentEdge) {
         discoveryTime[vertex] = lowLink[vertex] = timer++;
@@ -68,11 +70,9 @@ public:
             return;
         }
 
-        const int edgeId = static_cast<int>(graph[first].size()) +
-                           static_cast<int>(graph[second].size());
-
-        graph[first].push_back({second, edgeId});
-        graph[second].push_back({first, edgeId});
+        graph[first].push_back({second, nextEdgeId});
+        graph[second].push_back({first, nextEdgeId});
+        ++nextEdgeId;
     }
 
     void findCriticalElements() {
@@ -91,7 +91,7 @@ public:
         sort(bridges.begin(), bridges.end());
     }
 
-    const vector<pair<int, int>>& getBridges() const {
+    vector<pair<int, int>> getBridges() const {
         return bridges;
     }
 
@@ -105,17 +105,42 @@ public:
         sort(result.begin(), result.end());
         return result;
     }
+
+    size_t getAdjacencyEntryCount() const {
+        size_t total = 0;
+        for (const auto& neighbors : graph) {
+            total += neighbors.size();
+        }
+        return total;
+    }
 };
 
-template <typename T>
-bool sameVector(const vector<T>& a, const vector<T>& b) {
-    return a == b;
+static vector<pair<int, int>> normalizeBridges(const vector<pair<int, int>>& bridges) {
+    vector<pair<int, int>> copy = bridges;
+    sort(copy.begin(), copy.end());
+    return copy;
 }
 
-void runTest(const string& name,
-             const vector<pair<int, int>>& edges,
-             const vector<pair<int, int>>& expectedBridges,
-             const vector<int>& expectedArticulationPoints) {
+static vector<int> normalizeArticulationPoints(const vector<int>& points) {
+    vector<int> copy = points;
+    sort(copy.begin(), copy.end());
+    return copy;
+}
+
+static bool sameBridgeSet(const vector<pair<int, int>>& actual,
+                          const vector<pair<int, int>>& expected) {
+    return normalizeBridges(actual) == normalizeBridges(expected);
+}
+
+static bool samePointSet(const vector<int>& actual,
+                         const vector<int>& expected) {
+    return normalizeArticulationPoints(actual) == normalizeArticulationPoints(expected);
+}
+
+static void runTest(const string& name,
+                    const vector<pair<int, int>>& edges,
+                    const vector<pair<int, int>>& expectedBridges,
+                    const vector<int>& expectedArticulationPoints) {
     int maxVertex = 0;
     for (const auto& [u, v] : edges) {
         maxVertex = max(maxVertex, max(u, v));
@@ -131,21 +156,17 @@ void runTest(const string& name,
     const auto bridges = graph.getBridges();
     const auto articulationPoints = graph.getArticulationPoints();
 
-    if (!sameVector(bridges, expectedBridges)) {
+    if (!sameBridgeSet(bridges, expectedBridges)) {
         cerr << "FAIL: " << name << " bridges\n";
         cerr << "Expected: ";
-        for (const auto& e : expectedBridges) {
-            cerr << "(" << e.first << "," << e.second << ") ";
-        }
+        for (const auto& [u, v] : expectedBridges) cerr << "(" << u << "," << v << ") ";
         cerr << "\nActual:   ";
-        for (const auto& e : bridges) {
-            cerr << "(" << e.first << "," << e.second << ") ";
-        }
+        for (const auto& [u, v] : bridges) cerr << "(" << u << "," << v << ") ";
         cerr << "\n";
         assert(false);
     }
 
-    if (!sameVector(articulationPoints, expectedArticulationPoints)) {
+    if (!samePointSet(articulationPoints, expectedArticulationPoints)) {
         cerr << "FAIL: " << name << " articulation points\n";
         cerr << "Expected: ";
         for (int x : expectedArticulationPoints) cerr << x << " ";
@@ -158,48 +179,105 @@ void runTest(const string& name,
     cout << "PASS: " << name << "\n";
 }
 
+static void runPerformanceTest() {
+    const int vertices = 20000;
+    TarjanGraph graph(vertices);
+
+    for (int i = 0; i < vertices - 1; ++i) {
+        graph.addEdge(i, i + 1);
+    }
+    for (int i = 0; i < vertices; ++i) {
+        graph.addEdge(i, (i + 1) % vertices);
+    }
+
+    const auto start = chrono::steady_clock::now();
+    graph.findCriticalElements();
+    const auto end = chrono::steady_clock::now();
+    const auto elapsedMs = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    if (elapsedMs > 3000) {
+        cerr << "FAIL: performance test exceeded 3000 ms for " << vertices << " vertices (actual: "
+             << elapsedMs << " ms)\n";
+        assert(false);
+    }
+
+    cout << "PASS: performance test (" << vertices << " vertices, " << elapsedMs << " ms)\n";
+}
+
+static void runMemoryComplexityTest() {
+    const int vertices = 5000;
+    TarjanGraph graph(vertices);
+
+    for (int i = 0; i < vertices - 1; ++i) {
+        graph.addEdge(i, i + 1);
+    }
+    for (int i = 0; i < vertices - 2; ++i) {
+        graph.addEdge(i, i + 2);
+    }
+
+    graph.findCriticalElements();
+
+    const size_t adjacencyEntries = graph.getAdjacencyEntryCount();
+    const size_t stateEntries = graph.getArticulationPoints().size() +
+                               static_cast<size_t>(vertices) +
+                               static_cast<size_t>(vertices);
+
+    assert(graph.getBridges().size() <= adjacencyEntries);
+    assert(adjacencyEntries >= 2 * static_cast<size_t>(vertices));
+    assert(stateEntries <= 3 * static_cast<size_t>(vertices) + adjacencyEntries);
+
+    cout << "PASS: memory complexity test (V=" << vertices << ", adjacency entries="
+         << adjacencyEntries << ")\n";
+}
+
 int main() {
-    // 1) Simple path: 0-1-2
-    // Bridges: (0,1), (1,2)
-    // Articulation: 1
+    runTest("single isolated vertex",
+            {},
+            {},
+            {});
+
     runTest("path graph",
             {{0, 1}, {1, 2}},
             {{0, 1}, {1, 2}},
             {1});
 
-    // 2) Cycle: 0-1-2-0
-    // Bridges: none
-    // Articulation: none
     runTest("cycle graph",
             {{0, 1}, {1, 2}, {2, 0}},
             {},
             {});
 
-    // 3) Star: 0 connected to 1,2,3
-    // Bridges: none
-    // Articulation: 0
     runTest("star graph",
             {{0, 1}, {0, 2}, {0, 3}},
             {},
             {0});
 
-    // 4) Disconnected graph:
-    // 0-1-2 and 3-4
-    // Bridges: (0,1), (1,2), (3,4)
-    // Articulation: 1
     runTest("disconnected graph",
             {{0, 1}, {1, 2}, {3, 4}},
             {{0, 1}, {1, 2}, {3, 4}},
             {1});
 
-    // 5) Graph with a cycle and a leaf:
-    // 0-1, 1-2, 2-0, 1-3, 3-4
-    // Bridges: (3,4)
-    // Articulation: 1, 3
     runTest("cycle with leaf",
             {{0, 1}, {1, 2}, {2, 0}, {1, 3}, {3, 4}},
             {{3, 4}},
             {1, 3});
+
+    runTest("two cycles joined by a bridge",
+            {{0, 1}, {1, 2}, {2, 0}, {3, 4}, {4, 5}, {5, 3}, {2, 3}},
+            {{2, 3}},
+            {2, 3});
+
+    runTest("tree with two articulation points",
+            {{0, 1}, {1, 2}, {1, 3}, {3, 4}, {3, 5}},
+            {{0, 1}, {1, 2}, {1, 3}, {3, 4}, {3, 5}},
+            {1, 3});
+
+    runTest("complete graph",
+            {{0, 1}, {0, 2}, {1, 2}, {0, 3}, {1, 3}, {2, 3}},
+            {},
+            {});
+
+    runPerformanceTest();
+    runMemoryComplexityTest();
 
     cout << "All Tarjan validation tests passed." << endl;
     return 0;
